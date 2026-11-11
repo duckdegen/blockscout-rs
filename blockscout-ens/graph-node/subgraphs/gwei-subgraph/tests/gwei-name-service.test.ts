@@ -7,22 +7,24 @@ import {
   test,
 } from "matchstick-as/assembly/index";
 
-import { Domain, PrimaryNameRecord } from "../generated/schema";
+import { Domain, PrimaryNameRecord, TextChanged } from "../generated/schema";
 import {
   handleAddrChanged,
   handleNameRegistered,
   handleNameRenewed,
   handlePrimaryNameSet,
   handleSubdomainRegistered,
+  handleTextChanged,
   handleTransfer,
 } from "../src/gwei-name-service";
-import { GWEI_NODE, tokenIdToDomainID } from "../src/utils";
+import { GWEI_NODE, createEventID, tokenIdToDomainID } from "../src/utils";
 import {
   addrChangedEvent,
   nameRegisteredEvent,
   nameRenewedEvent,
   primaryNameSetEvent,
   subdomainRegisteredEvent,
+  textChangedEvent,
   transferEvent,
 } from "./gwei-name-service-utils";
 
@@ -209,6 +211,29 @@ describe("Gwei Name Service mapping", () => {
       "domain_name",
       "alice.gwei"
     );
+  });
+
+  test("records text record changes under the resolver of the current registration", () => {
+    let tokenId = BigInt.fromI32(6);
+    registerName(tokenId, "alice", 1000);
+    let resolver = Domain.load(tokenIdToDomainID(tokenId))!.resolver!;
+
+    let changed = textChangedEvent(tokenId, "url", "https://gwei.domains");
+    let withNul = textChangedEvent(tokenId, "description", "a\u0000b");
+    handleTextChanged(changed);
+    handleTextChanged(withNul);
+
+    let changedID = createEventID(changed);
+    assert.entityCount("TextChanged", 2);
+    assert.fieldEquals("TextChanged", changedID, "resolver", resolver);
+    assert.fieldEquals(
+      "TextChanged",
+      changedID,
+      "key",
+      "0xb68b5f5089998f2978a1dcc681e8ef27962b90d5c26c4c0b9c1945814ffa5ef0"
+    );
+    assert.fieldEquals("TextChanged", changedID, "value", "https://gwei.domains");
+    assert.assertNull(TextChanged.load(createEventID(withNul))!.value);
   });
 
   test("extends subdomains at every level when the top-level name is renewed", () => {

@@ -1,4 +1,10 @@
-import { Address, BigInt, Bytes, ethereum } from "@graphprotocol/graph-ts";
+import {
+  Address,
+  BigInt,
+  Bytes,
+  crypto,
+  ethereum,
+} from "@graphprotocol/graph-ts";
 import { newMockEvent } from "matchstick-as/assembly/index";
 
 import {
@@ -7,6 +13,7 @@ import {
   NameRenewed,
   PrimaryNameSet,
   SubdomainRegistered,
+  TextChanged,
   Transfer,
 } from "../generated/NameNFT/NameNFT";
 import { tokenIdToDomainID } from "../src/utils";
@@ -126,6 +133,31 @@ export function primaryNameSetEvent(
       "tokenId",
       ethereum.Value.fromUnsignedBigInt(tokenId)
     ),
+  ];
+  return event;
+}
+
+export function textChangedEvent(
+  tokenId: BigInt,
+  key: string,
+  value: string
+): TextChanged {
+  let event = changetype<TextChanged>(mockEvent());
+  event.parameters = [
+    new ethereum.EventParam(
+      "node",
+      ethereum.Value.fromFixedBytes(
+        Bytes.fromHexString(tokenIdToDomainID(tokenId))
+      )
+    ),
+    // an indexed string is logged as the keccak256 hash of its content
+    new ethereum.EventParam(
+      "key",
+      ethereum.Value.fromFixedBytes(
+        Bytes.fromByteArray(crypto.keccak256(Bytes.fromUTF8(key)))
+      )
+    ),
+    new ethereum.EventParam("value", ethereum.Value.fromString(value)),
   ];
   return event;
 }

@@ -14,6 +14,7 @@ import {
   NameRenewed as NameRenewedEvent,
   PrimaryNameSet as PrimaryNameSetEvent,
   SubdomainRegistered as SubdomainRegisteredEvent,
+  TextChanged as TextChangedEvent,
   Transfer as TransferEvent,
 } from "../generated/NameNFT/NameNFT";
 import {
@@ -29,6 +30,7 @@ import {
   PrimaryNameRecord,
   Registration,
   Resolver,
+  TextChanged,
   TokenIdToDomain,
   Transfer,
 } from "../generated/schema";
@@ -432,6 +434,26 @@ export function handleContenthashChanged(event: ContenthashChangedEvent): void {
   changed.blockNumber = event.block.number.toI32();
   changed.transactionID = event.transaction.hash;
   changed.hash = event.params.contenthash;
+  changed.save();
+}
+
+export function handleTextChanged(event: TextChangedEvent): void {
+  let domain = Domain.load(event.params.node.toHexString());
+  if (domain === null) return;
+  let resolver = loadResolver(domain);
+  if (resolver === null) return;
+
+  // The key is an indexed string, so the log only carries its keccak256 hash
+  // and Resolver.texts cannot list it. The event is still recorded: BENS
+  // builds the history of a name from it.
+  let changed = new TextChanged(createEventID(event));
+  changed.resolver = resolver.id;
+  changed.blockNumber = event.block.number.toI32();
+  changed.transactionID = event.transaction.hash;
+  changed.key = event.params.key.toHexString();
+  // Postgres rejects NUL bytes in text columns.
+  let value = event.params.value;
+  changed.value = value.indexOf("\u0000") == -1 ? value : null;
   changed.save();
 }
 

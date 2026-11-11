@@ -9,9 +9,11 @@ falls back to its current owner. `PrimaryNameSet` selects reverse names, which a
 only exposed when forward resolution still matches the selected address.
 
 The mapping indexes registrations, renewals, subdomains, transfers, native and
-multicoin addresses, content hashes, and primary-name selections. Resolver
-entities are versioned per registration so records from an expired registration
-cannot leak into a later registration of the same name.
+multicoin addresses, content hashes, text record changes, and primary-name
+selections. Resolver entities are versioned per registration so records from an
+expired registration cannot leak into a later registration of the same name.
+`TextChanged` logs the record key as an indexed topic, so only the hash of the
+key is known.
 
 GNS subdomains have no expiry of their own: they are active while every ancestor
 is active and they were registered under the parent's current registration. The
