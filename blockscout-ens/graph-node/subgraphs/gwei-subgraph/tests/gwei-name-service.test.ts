@@ -173,6 +173,44 @@ describe("Gwei Name Service mapping", () => {
     assert.assertNotNull(child.resolver);
   });
 
+  test("drops the previous owner's primary name when the name is registered again", () => {
+    let tokenId = BigInt.fromI32(5);
+    let domainID = tokenIdToDomainID(tokenId);
+    let zero = Address.zero();
+    registerName(tokenId, "alice", 1000);
+    handleAddrChanged(addrChangedEvent(tokenId, Address.fromString(EXPLICIT)));
+    handlePrimaryNameSet(
+      primaryNameSetEvent(Address.fromString(OWNER), tokenId)
+    );
+    handlePrimaryNameSet(
+      primaryNameSetEvent(Address.fromString(EXPLICIT), tokenId)
+    );
+
+    // the previous owner registers the expired name again
+    handleTransfer(transferEvent(Address.fromString(OWNER), zero, tokenId));
+    assert.fieldEquals("Domain", domainID, "owner", OWNER);
+    handleTransfer(transferEvent(zero, Address.fromString(OWNER), tokenId));
+    registerName(tokenId, "alice", 20000, 10000);
+
+    assert.fieldEquals("Domain", domainID, "owner", OWNER);
+    assert.fieldEquals("Domain", domainID, "resolvedAddress", OWNER);
+    let ownerPrimary = PrimaryNameRecord.load(OWNER)!;
+    assert.assertNull(ownerPrimary.domain_id);
+    assert.assertNull(ownerPrimary.domain_name);
+
+    // the contract keeps the selection of an address that was not the owner;
+    // it applies again once the new registration resolves to that address
+    let explicitPrimary = PrimaryNameRecord.load(EXPLICIT)!;
+    assert.assertNull(explicitPrimary.domain_name);
+    handleAddrChanged(addrChangedEvent(tokenId, Address.fromString(EXPLICIT)));
+    assert.fieldEquals(
+      "PrimaryNameRecord",
+      EXPLICIT,
+      "domain_name",
+      "alice.gwei"
+    );
+  });
+
   test("extends subdomains at every level when the top-level name is renewed", () => {
     let parentId = BigInt.fromI32(10);
     let childId = BigInt.fromI32(11);

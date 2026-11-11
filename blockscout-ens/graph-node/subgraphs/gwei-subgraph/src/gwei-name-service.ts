@@ -319,6 +319,23 @@ export function handleTransfer(event: TransferEvent): void {
   // label and complete domain data.
   if (domain === null) return;
 
+  if (event.params.to.toHexString() == EMPTY_ADDRESS) {
+    // A token is only burned while its name is being registered again. The
+    // contract then also deletes the previous owner's primary-name selection
+    // of this token without emitting PrimaryNameSet. The mint Transfer and
+    // NameRegistered that follow rewrite the domain itself.
+    let record = PrimaryNameRecord.load(event.params.from.toHexString());
+    if (record !== null) {
+      let selectedDomain = record.domain_id;
+      if (selectedDomain !== null && selectedDomain == domain.id) {
+        record.domain_id = null;
+        record.domain_name = null;
+        record.save();
+      }
+    }
+    return;
+  }
+
   let recipient = createOrLoadAccount(event.params.to);
   let state = createOrLoadState(domain.id);
   domain.owner = recipient.id;
