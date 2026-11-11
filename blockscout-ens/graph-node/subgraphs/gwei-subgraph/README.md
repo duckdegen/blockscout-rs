@@ -13,6 +13,13 @@ multicoin addresses, content hashes, and primary-name selections. Resolver
 entities are versioned per registration so records from an expired registration
 cannot leak into a later registration of the same name.
 
+GNS subdomains have no expiry of their own: they are active while every ancestor
+is active and they were registered under the parent's current registration. The
+contract emits no event for a subdomain when an ancestor is renewed or registered
+again, so the mapping copies the top-level expiry onto every subdomain, extends
+it when the top-level name is renewed, and expires the descendants of a name
+that is registered again.
+
 ## Networks
 
 | Network | Contract | Start block |

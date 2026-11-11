@@ -315,6 +315,12 @@ type DomainState @entity {
   registrationVersion: Int!
   "Parent registration version captured when this subdomain was registered"
   parentRegistrationVersion: Int!
+  "Whether this subdomain is already linked into its parent's subdomain list"
+  listedInParent: Boolean!
+  "The most recently linked subdomain; head of the list of every subdomain ever registered under this domain"
+  firstSubdomain: String
+  "The next subdomain of the same parent in the parent's subdomain list"
+  nextSubdomain: String
 }
 
 type Resolver @entity {

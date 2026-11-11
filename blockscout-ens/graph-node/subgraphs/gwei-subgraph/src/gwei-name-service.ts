@@ -68,6 +68,7 @@ function createOrLoadState(domainID: string): DomainState {
     state.hasExplicitAddress = false;
     state.registrationVersion = 0;
     state.parentRegistrationVersion = 0;
+    state.listedInParent = false;
   }
   return state;
 }
@@ -123,12 +124,56 @@ function loadResolver(domain: Domain): Resolver | null {
   return Resolver.load(domain.resolver!);
 }
 
+// GNS subdomains have no expiry of their own: a subdomain is active only while
+// every ancestor is active and it was registered under its parent's current
+// registration. The contract emits nothing for a subdomain when an ancestor is
+// renewed or re-registered, so the expiry snapshotted on each subdomain is
+// rewritten here. Only subdomains of the current registration are visited;
+// those of earlier registrations were already expired when it ended.
+function setSubdomainsExpiry(
+  parentState: DomainState,
+  expiryDate: BigInt
+): void {
+  let childID = parentState.firstSubdomain;
+  while (childID !== null) {
+    let childState = DomainState.load(childID!);
+    if (childState === null) return;
+    if (
+      childState.parentRegistrationVersion == parentState.registrationVersion
+    ) {
+      let child = Domain.load(childID!);
+      if (child !== null) {
+        child.expiryDate = expiryDate;
+        child.save();
+      }
+      let registration = Registration.load(childID!);
+      if (registration !== null) {
+        registration.expiryDate = expiryDate;
+        registration.save();
+      }
+      setSubdomainsExpiry(childState, expiryDate);
+    }
+    childID = childState.nextSubdomain;
+  }
+}
+
 export function handleNameRegistered(event: NameRegisteredEvent): void {
   let domainID = tokenIdToDomainID(event.params.tokenId);
   let owner = createOrLoadAccount(event.params.owner);
   let domain = Domain.load(domainID);
+  let state = createOrLoadState(domainID);
 
   let isNewDomain = domain === null;
+  if (domain !== null) {
+    // Re-registering a name starts a new epoch on-chain, which invalidates
+    // every subdomain registered under the previous one. After a top-level
+    // name expired they are expired already; a subdomain reclaimed by its
+    // parent's owner still has live descendants.
+    let previousExpiry = domain.expiryDate;
+    if (previousExpiry === null || previousExpiry.gt(event.block.timestamp)) {
+      setSubdomainsExpiry(state, event.block.timestamp);
+    }
+  }
   if (domain === null) {
     domain = new Domain(domainID);
     domain.subdomainCount = 0;
@@ -159,9 +204,7 @@ export function handleNameRegistered(event: NameRegisteredEvent): void {
   let resolver = createResolver(event, domain);
   domain.resolver = resolver.id;
 
-  let state = createOrLoadState(domain.id);
   state.registrationVersion = state.registrationVersion + 1;
-  state.parentRegistrationVersion = 0;
   state.hasExplicitAddress = false;
   state.explicitAddress = null;
   state.save();
@@ -211,11 +254,18 @@ export function handleSubdomainRegistered(
     parent.subdomainCount = parent.subdomainCount + 1;
     parent.save();
   }
+  if (!state.listedInParent) {
+    state.listedInParent = true;
+    state.nextSubdomain = parentState.firstSubdomain;
+    parentState.firstSubdomain = domain.id;
+    parentState.save();
+  }
 
   domain.parent = parent.id;
   domain.name = event.params.label.concat(".").concat(parent.name!);
-  // GNS subdomains inherit activity from their parent chain. Snapshotting the
-  // current parent expiry makes BENS's time-based active filter conservative.
+  // GNS subdomains inherit activity from their parent chain. BENS filters
+  // active names by expiry, so the parent expiry is copied here and kept in
+  // sync by setSubdomainsExpiry.
   domain.expiryDate = parent.expiryDate;
   domain.save();
   state.parentRegistrationVersion = parentState.registrationVersion;
@@ -242,6 +292,10 @@ export function handleNameRenewed(event: NameRenewedEvent): void {
   domain.save();
   registration.expiryDate = event.params.newExpiresAt;
   registration.save();
+  let state = DomainState.load(domainID);
+  if (state !== null) {
+    setSubdomainsExpiry(state, event.params.newExpiresAt);
+  }
 
   let renewed = new NameRenewed(createEventID(event));
   renewed.registration = registration.id;
