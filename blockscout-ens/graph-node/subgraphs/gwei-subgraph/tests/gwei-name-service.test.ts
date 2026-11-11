@@ -11,6 +11,7 @@ import { Domain, PrimaryNameRecord } from "../generated/schema";
 import {
   handleAddrChanged,
   handleNameRegistered,
+  handleNameRenewed,
   handlePrimaryNameSet,
   handleSubdomainRegistered,
   handleTransfer,
@@ -19,6 +20,7 @@ import { GWEI_NODE, tokenIdToDomainID } from "../src/utils";
 import {
   addrChangedEvent,
   nameRegisteredEvent,
+  nameRenewedEvent,
   primaryNameSetEvent,
   subdomainRegisteredEvent,
   transferEvent,
@@ -27,6 +29,35 @@ import {
 const OWNER = "0x0000000000000000000000000000000000000001";
 const RECIPIENT = "0x0000000000000000000000000000000000000002";
 const EXPLICIT = "0x0000000000000000000000000000000000000003";
+
+function registerName(
+  tokenId: BigInt,
+  label: string,
+  expiresAt: i32,
+  timestamp: i32 = 1
+): void {
+  handleNameRegistered(
+    nameRegisteredEvent(
+      tokenId,
+      label,
+      Address.fromString(OWNER),
+      BigInt.fromI32(expiresAt),
+      timestamp
+    )
+  );
+}
+
+function registerSubdomain(
+  tokenId: BigInt,
+  parentId: BigInt,
+  label: string,
+  timestamp: i32 = 1
+): void {
+  registerName(tokenId, label, 0, timestamp);
+  handleSubdomainRegistered(
+    subdomainRegisteredEvent(tokenId, parentId, label)
+  );
+}
 
 describe("Gwei Name Service mapping", () => {
   afterEach(() => {
@@ -140,5 +171,118 @@ describe("Gwei Name Service mapping", () => {
     assert.fieldEquals("Domain", parentDomainID, "subdomainCount", "1");
     let child = Domain.load(childDomainID)!;
     assert.assertNotNull(child.resolver);
+  });
+
+  test("extends subdomains at every level when the top-level name is renewed", () => {
+    let parentId = BigInt.fromI32(10);
+    let childId = BigInt.fromI32(11);
+    let grandchildId = BigInt.fromI32(12);
+    let siblingId = BigInt.fromI32(13);
+    registerName(parentId, "alice", 1000);
+    registerSubdomain(childId, parentId, "pay");
+    registerSubdomain(grandchildId, childId, "x");
+    registerSubdomain(siblingId, parentId, "shop");
+
+    handleNameRenewed(nameRenewedEvent(parentId, BigInt.fromI32(2000)));
+
+    assert.fieldEquals(
+      "Domain",
+      tokenIdToDomainID(parentId),
+      "expiryDate",
+      "2000"
+    );
+    assert.fieldEquals(
+      "Domain",
+      tokenIdToDomainID(childId),
+      "expiryDate",
+      "2000"
+    );
+    assert.fieldEquals(
+      "Domain",
+      tokenIdToDomainID(grandchildId),
+      "expiryDate",
+      "2000"
+    );
+    assert.fieldEquals(
+      "Domain",
+      tokenIdToDomainID(siblingId),
+      "expiryDate",
+      "2000"
+    );
+    assert.fieldEquals(
+      "Registration",
+      tokenIdToDomainID(grandchildId),
+      "expiryDate",
+      "2000"
+    );
+  });
+
+  test("leaves subdomains of an expired registration expired after the name is registered again", () => {
+    let parentId = BigInt.fromI32(20);
+    let staleId = BigInt.fromI32(21);
+    let freshId = BigInt.fromI32(22);
+    let parentDomainID = tokenIdToDomainID(parentId);
+    registerName(parentId, "alice", 1000);
+    registerSubdomain(staleId, parentId, "pay");
+
+    registerName(parentId, "alice", 20000, 10000);
+    assert.fieldEquals("Domain", parentDomainID, "subdomainCount", "0");
+    registerSubdomain(freshId, parentId, "shop", 10000);
+    handleNameRenewed(nameRenewedEvent(parentId, BigInt.fromI32(30000)));
+
+    assert.fieldEquals(
+      "Domain",
+      tokenIdToDomainID(staleId),
+      "expiryDate",
+      "1000"
+    );
+    assert.fieldEquals(
+      "Domain",
+      tokenIdToDomainID(freshId),
+      "expiryDate",
+      "30000"
+    );
+    assert.fieldEquals("Domain", parentDomainID, "subdomainCount", "1");
+
+    // registering the stale subdomain again makes it valid under the new parent
+    registerSubdomain(staleId, parentId, "pay", 10000);
+    assert.fieldEquals(
+      "Domain",
+      tokenIdToDomainID(staleId),
+      "expiryDate",
+      "30000"
+    );
+    assert.fieldEquals("Domain", parentDomainID, "subdomainCount", "2");
+    handleNameRenewed(nameRenewedEvent(parentId, BigInt.fromI32(40000)));
+    assert.fieldEquals(
+      "Domain",
+      tokenIdToDomainID(staleId),
+      "expiryDate",
+      "40000"
+    );
+  });
+
+  test("expires the descendants of a subdomain reclaimed by the parent owner", () => {
+    let parentId = BigInt.fromI32(30);
+    let childId = BigInt.fromI32(31);
+    let grandchildId = BigInt.fromI32(32);
+    let parentDomainID = tokenIdToDomainID(parentId);
+    let childDomainID = tokenIdToDomainID(childId);
+    let grandchildDomainID = tokenIdToDomainID(grandchildId);
+    registerName(parentId, "alice", 1000);
+    registerSubdomain(childId, parentId, "pay");
+    registerSubdomain(grandchildId, childId, "x");
+
+    registerSubdomain(childId, parentId, "pay", 500);
+
+    assert.fieldEquals("Domain", childDomainID, "expiryDate", "1000");
+    assert.fieldEquals("Domain", childDomainID, "subdomainCount", "0");
+    assert.fieldEquals("Domain", grandchildDomainID, "expiryDate", "500");
+    assert.fieldEquals("Domain", parentDomainID, "subdomainCount", "1");
+
+    // a later renewal must not revive the invalidated descendant
+    handleNameRenewed(nameRenewedEvent(parentId, BigInt.fromI32(2000)));
+    assert.fieldEquals("Domain", childDomainID, "expiryDate", "2000");
+    assert.fieldEquals("Domain", grandchildDomainID, "expiryDate", "500");
   });
 });

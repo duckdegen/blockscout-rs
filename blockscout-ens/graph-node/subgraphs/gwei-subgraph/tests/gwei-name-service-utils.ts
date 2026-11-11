@@ -4,19 +4,33 @@ import { newMockEvent } from "matchstick-as/assembly/index";
 import {
   AddrChanged,
   NameRegistered,
+  NameRenewed,
   PrimaryNameSet,
   SubdomainRegistered,
   Transfer,
 } from "../generated/NameNFT/NameNFT";
 import { tokenIdToDomainID } from "../src/utils";
 
+let nextLogIndex = 0;
+
+// Mock events share one transaction, so give each its own log index the way
+// real logs have: entity IDs derived from events must not collide.
+function mockEvent(): ethereum.Event {
+  let event = newMockEvent();
+  event.logIndex = BigInt.fromI32(nextLogIndex);
+  nextLogIndex = nextLogIndex + 1;
+  return event;
+}
+
 export function nameRegisteredEvent(
   tokenId: BigInt,
   label: string,
   owner: Address,
-  expiresAt: BigInt
+  expiresAt: BigInt,
+  timestamp: i32 = 1
 ): NameRegistered {
-  let event = changetype<NameRegistered>(newMockEvent());
+  let event = changetype<NameRegistered>(mockEvent());
+  event.block.timestamp = BigInt.fromI32(timestamp);
   event.parameters = [
     new ethereum.EventParam(
       "tokenId",
@@ -32,12 +46,30 @@ export function nameRegisteredEvent(
   return event;
 }
 
+export function nameRenewedEvent(
+  tokenId: BigInt,
+  newExpiresAt: BigInt
+): NameRenewed {
+  let event = changetype<NameRenewed>(mockEvent());
+  event.parameters = [
+    new ethereum.EventParam(
+      "tokenId",
+      ethereum.Value.fromUnsignedBigInt(tokenId)
+    ),
+    new ethereum.EventParam(
+      "newExpiresAt",
+      ethereum.Value.fromUnsignedBigInt(newExpiresAt)
+    ),
+  ];
+  return event;
+}
+
 export function subdomainRegisteredEvent(
   tokenId: BigInt,
   parentId: BigInt,
   label: string
 ): SubdomainRegistered {
-  let event = changetype<SubdomainRegistered>(newMockEvent());
+  let event = changetype<SubdomainRegistered>(mockEvent());
   event.parameters = [
     new ethereum.EventParam(
       "tokenId",
@@ -57,7 +89,7 @@ export function transferEvent(
   to: Address,
   tokenId: BigInt
 ): Transfer {
-  let event = changetype<Transfer>(newMockEvent());
+  let event = changetype<Transfer>(mockEvent());
   event.parameters = [
     new ethereum.EventParam("from", ethereum.Value.fromAddress(from)),
     new ethereum.EventParam("to", ethereum.Value.fromAddress(to)),
@@ -70,7 +102,7 @@ export function transferEvent(
 }
 
 export function addrChangedEvent(tokenId: BigInt, addr: Address): AddrChanged {
-  let event = changetype<AddrChanged>(newMockEvent());
+  let event = changetype<AddrChanged>(mockEvent());
   event.parameters = [
     new ethereum.EventParam(
       "node",
@@ -87,7 +119,7 @@ export function primaryNameSetEvent(
   addr: Address,
   tokenId: BigInt
 ): PrimaryNameSet {
-  let event = changetype<PrimaryNameSet>(newMockEvent());
+  let event = changetype<PrimaryNameSet>(mockEvent());
   event.parameters = [
     new ethereum.EventParam("addr", ethereum.Value.fromAddress(addr)),
     new ethereum.EventParam(
