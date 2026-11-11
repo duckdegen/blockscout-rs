@@ -431,7 +431,7 @@ type TextChanged implements ResolverEvent @entity {
   blockNumber: Int!
   "Hash of the Ethereum transaction in which the event occurred"
   transactionID: Bytes!
-  "The key of the text record that was changed"
+  "The keccak256 hash of the key of the text record that was changed. GNS logs the key as an indexed topic, so the key itself is not available"
   key: String!
   "The new value of the text record that was changed"
   value: String

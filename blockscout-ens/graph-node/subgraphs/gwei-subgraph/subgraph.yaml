@@ -28,6 +28,7 @@ dataSources:
         - AddrChanged
         - MulticoinAddrChanged
         - ContenthashChanged
+        - TextChanged
         - TokenIdToDomain
         - PrimaryNameRecord
       abis:
@@ -50,4 +51,6 @@ dataSources:
           handler: handleAddressChanged
         - event: ContenthashChanged(indexed bytes32,bytes)
           handler: handleContenthashChanged
+        - event: TextChanged(indexed bytes32,indexed string,string)
+          handler: handleTextChanged
       file: ./src/gwei-name-service.ts
